@@ -17,11 +17,14 @@ or was first reported, on Friday 20 November 2026.
 
 ## Files
 
-- `entry.png` — the final image, 1024×1024 PNG (680 KB).
+- `entry.png` — the final image, 1024×1024 PNG.
 - `draw.py` — the renderer (Python + PIL, no network, deterministic).
-  It holds all 33 stories and draws everything: masthead, strips, map
-  polygons, story grid, list, judge note. Run `python3 draw.py` to
+  It holds all 33 stories and draws everything: masthead, strips, map,
+  story grid, list, judge note. Run `python3 draw.py` to
   re-render `entry.png` from scratch.
+- `land-110m.geojson` — Natural Earth 110m land polygons (public domain),
+  the map's coastlines; `draw.py` falls back to hand polygons if it is
+  missing.
 - `main.py` — the grader entry point. Standard library only: it copies
   `entry.png` into `$MAKEFUN_OUTPUT_DIR` (default `/output`).
 - `photos/` — the 11 card photos (1920x1280, centre-cropped per-photo
@@ -46,6 +49,22 @@ To re-render the image from scratch (needs PIL + DejaVu fonts):
 ```sh
 python3 draw.py   # writes entry.png
 ```
+
+## v2 (20 Nov 2026) — revisi verdict fadli ("peta terlalu jelek, tulisan
+dan struktur kurang rapi")
+
+- **Peta digambar ulang total**: garis pantai asli Natural Earth 110m
+  (`land-110m.geojson`, public domain) — bukan lagi poligon tangan;
+  daratan flat sage tanpa mottling, tanpa garis batas negara palsu;
+  label benua/lautan letterspaced dan dijauhkan dari pin; pin yang
+  bertumpuk diberi leader line berbentuk V (Washington vs New York,
+  Seoul vs Yongbyon, Tokyo; Fiji ditarik masuk dari tepi peta).
+- **Tipografi dilonggarkan**: strip angka 26 → 34 px, strip UTC 19 → 26 px,
+  supaya angka/caption dan fase/event tidak lagi mepet garis.
+- **Struktur dirapikan**: hero 198 → 190 px, kartu kecil 174 → 170 px,
+  peta 448x240 → 448x238; end y 1019 dari 1024.
+- Isi TIDAK berubah: 11 berita utama + 22 ALSO, Judge Note + DATE CHECK,
+  footer sumber — semua sama seperti v1.
 
 ## v1 (20 Nov 2026)
 
