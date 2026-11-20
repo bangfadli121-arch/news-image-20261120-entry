@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Draw entry.png v1 for news-image-20261120: 'The World - Friday 20 November 2026'.
+"""Draw entry.png v2 for news-image-20261120: 'The World - Friday 20 November 2026'.
 
 Front page in the proven v5 layout (masthead 37pt, numbers strip, UTC
-strip, 3 hero photo cards, 8 small photo cards, realistic map + ALSO
-briefs, Judge Note + DATE CHECK). 33 stories, all happened or first
+strip, 3 hero photo cards, 8 small photo cards, Natural Earth 110m map +
+ALSO briefs, Judge Note + DATE CHECK). 33 stories, all happened or first
 reported on Friday 20 November 2026 (any time zone).
+
+v2 (verdict fadli: peta jelek, tulisan/struktur kurang rapi): map redrawn
+from Natural Earth 110m coastlines (flat land, no mottling/borders),
+strips loosened (numbers 34px, UTC 26px), cards/map tightened to fit.
+Content unchanged from v1.
 
 Photos: 4 new (hero1-iran, card5-europe, card9-fiji, card11-yongbyon)
 + 7 reused from the 19 Nov entry where the subject matches (cyclone,
@@ -25,8 +30,8 @@ DARKRED = (120, 20, 20)
 MUTED = (90, 82, 66)        # v5: digelapkan (v4: 112,102,86) supaya jelas
 RULE = (40, 40, 38)
 OCEAN = (214, 230, 227)
-LAND = (198, 206, 158)
-LANDB = (138, 150, 102)
+LAND = (203, 209, 164)
+LANDB = (118, 130, 86)
 BORDERLINE = (105, 116, 78)  # v5: batas negara, lebih redup dari pantai
 CONTLBL = (96, 104, 72)      # v5: label benua di atas daratan
 GOLD = (176, 138, 58)
@@ -78,7 +83,7 @@ MAIN = [
     dict(n=1, kicker="WASHINGTON · IRAN",
          head="Trump delays Iran decision to 2027",
          deck="“No rush,” he says — he will “see what happens” after Jan 1; the Senate rejects curbing his war powers.",
-         icon="missile", lon=-77, lat=39),
+         icon="missile", lon=-77, lat=39, dx=-18, dy=-16),
     dict(n=2, kicker="INDIA · CYCLONE",
          head="Cyclone Akvan comes ashore at noon",
          deck="105,304 people moved to 1,224 shelters as the storm crosses near Gopalpur; winds to 110 km/h.",
@@ -98,19 +103,19 @@ MAIN = [
     dict(n=6, kicker="SOUTH KOREA · COURTS",
          head="Top court overturns ex-PM Han’s 15-year term",
          deck="Han Duck-soo’s martial-law conviction sent back for retrial; detention extended two months.",
-         icon="scales", lon=127, lat=37.5),
+         icon="scales", lon=127, lat=37.5, dx=14, dy=22),
     dict(n=7, kicker="SPACE · JAPAN",
          head="Engine trouble ends Hayabusa2’s asteroid landing",
          deck="JAXA scraps the landing plan after a fault on the asteroid probe.",
-         icon="rocket", lon=139.7, lat=35.7, dx=16, dy=12),
+         icon="rocket", lon=139.7, lat=35.7, dx=22, dy=16),
     dict(n=8, kicker="UNITED STATES · TECH",
          head="Anthropic’s record IPO closes today",
          deck="$107.3bn deal at $83 a share values the Claude maker at $1.5tn.",
-         icon="chart", lon=-74, lat=40.7, dx=30, dy=16),
+         icon="chart", lon=-74, lat=40.7, dx=26, dy=20),
     dict(n=9, kicker="FIJI · CLIMATE",
          head="Fiji declares a national disaster as drought bites",
          deck="Severe drought and water shortages blamed on El Niño conditions.",
-         icon="storm", lon=178, lat=-17.7, dx=-14, dy=0),
+         icon="storm", lon=178, lat=-17.7, dx=-30, dy=-10),
     dict(n=10, kicker="VENEZUELA · US",
          head="US and Venezuela to restore military cooperation",
          deck="Defence chiefs agree to renew ties, the US says.",
@@ -118,7 +123,7 @@ MAIN = [
     dict(n=11, kicker="NORTH KOREA · NUCLEAR",
          head="Watchdog: North Korea is expanding Yongbyon",
          deck="UN nuclear agency reports the uranium enrichment site is growing.",
-         icon="missile", lon=126.3, lat=39.8, dx=-28, dy=-16),
+         icon="missile", lon=126.3, lat=39.8, dx=-30, dy=-18),
 ]
 
 ALSO = [
@@ -429,85 +434,111 @@ def project(x0, y0, x1, y1, lon, lat):
     return px, py
 
 
+def _split_ring(ring):
+    """Split a lon/lat ring at antimeridian jumps (lon jump > 180 deg);
+    returns a list of sub-rings so no line is drawn across the map."""
+    subs, cur = [], []
+    prev = None
+    for lon, lat in ring:
+        if prev is not None and abs(lon - prev[0]) > 180:
+            edge = 180 if prev[0] > 0 else -180
+            t = (edge - prev[0]) / (lon - prev[0])
+            lat_e = prev[1] + t * (lat - prev[1])
+            cur.append((edge, lat_e))
+            subs.append(cur)
+            cur = [(-edge, lat_e), (lon, lat)]
+        else:
+            cur.append((lon, lat))
+        prev = (lon, lat)
+    if cur:
+        subs.append(cur)
+    return subs
+
+
+def _load_land_rings():
+    """Coastlines from Natural Earth 110m (land-110m.geojson, public
+    domain, in this repo). Falls back to the hand polygons below if the
+    file is missing."""
+    import json
+    path = os.path.join(HERE, "land-110m.geojson")
+    if os.path.exists(path):
+        d = json.load(open(path))
+        rings = []
+        for feat in d["features"]:
+            g = feat["geometry"]
+            if g["type"] == "Polygon":
+                for ring in g["coordinates"]:
+                    rings.extend(_split_ring(ring))
+            elif g["type"] == "MultiPolygon":
+                for poly in g["coordinates"]:
+                    for ring in poly:
+                        rings.extend(_split_ring(ring))
+        return rings
+    rings = []
+    for poly in CONTINENTS + ISLANDS:
+        rings.append([(lo, la) for lo, la in poly])
+    return rings
+
+
+def spaced(d, cx, y, text, fnt, fill, tracking=2):
+    """Draw text with letter tracking, centred on cx."""
+    widths = [fnt.getlength(c) for c in text]
+    total = sum(widths) + tracking * (len(text) - 1)
+    x = cx - total / 2
+    for c, w in zip(text, widths):
+        d.text((x, y), c, font=fnt, fill=fill)
+        x += w + tracking
+
+
 def draw_map(d, x0, y0, x1, y1, pin_r=8):
-    """v5 realistic map (448x242): ocean vertical gradient, terrain shading
-    on land (soft deterministic blobs clipped to the land mask, blurred),
-    1px country borders for major states, islands (Japan, Indonesia,
-    Madagascar, NZ, Iceland, Cuba, Philippines), continent labels,
-    labelled graticule, ocean names, compass rose bottom-left. Pin 11
-    (Fed) sits exactly on Washington DC (-77, 39) with NO offset; pin 9
-    keeps its leader line (it would otherwise sit on pin 6, both ~lon
-    4.4). Pin 8 (Houston) vs pin 5 (Miami): centres 19.5px apart, pin
-    r=8 -> 3.5px clear gap. EUROPE label omitted on purpose: pins 6/7/9
-    cover every spot a label could sit in Europe."""
-    from PIL import ImageFilter
-    import random
+    """v2 map (448x238): Natural Earth 110m coastlines, flat sage land,
+    crisp 1px coastline, NO terrain mottling, NO fake country borders,
+    light graticule, letterspaced continent/ocean labels placed clear of
+    pins, compass rose bottom-left. Pins: 1 and 8 both offset (DC and NYC
+    are 3 deg apart, so their leaders form a V into the same spot); 6 and
+    11 both offset the same way (Seoul/Yongbyon); 7 down-right; 9 pulled
+    in from the right edge (Fiji, lon 178)."""
     mw, mh = x1 - x0, y1 - y0
-    # ocean: smooth vertical gradient (light top -> deeper bottom)
+    # ocean: subtle vertical gradient
     grad = Image.new("RGB", (1, mh))
-    top, bot = (219, 233, 230), (193, 216, 214)
+    top, bot = (222, 235, 233), (198, 219, 217)
     grad.putdata([tuple(top[i] + (bot[i] - top[i]) * j // (mh - 1)
                         for i in range(3)) for j in range(mh)])
     d._image.paste(grad.resize((mw, mh)), (x0, y0))
     d.rectangle([x0, y0, x1, y1], outline=RULE, width=1)
-    # --- terrain: land mask from CONTINENTS + ISLANDS
-    mask = Image.new("L", (mw, mh), 0)
-    md = ImageDraw.Draw(mask)
+    # --- land: flat fill, then crisp coastline on top
     land_polys = []
-    for poly in CONTINENTS + ISLANDS:
-        pts = [project(x0, y0, x1, y1, lo, la) for lo, la in poly]
+    for ring in _load_land_rings():
+        pts = [project(x0, y0, x1, y1, lo, la) for lo, la in ring]
         land_polys.append(pts)
-        md.polygon([(px - x0, py - y0) for px, py in pts], fill=255)
-    # soft mottling: deterministic blobs, blurred, clipped by the mask
-    terrain = Image.new("RGB", (mw, mh), LAND)
-    patch = Image.new("RGBA", (mw, mh), (0, 0, 0, 0))
-    pd = ImageDraw.Draw(patch)
-    rng = random.Random(19)
-    shades = [(188, 198, 140), (208, 212, 168), (176, 186, 128),
-              (202, 200, 150), (190, 196, 132)]
-    for _ in range(30):
-        cx, cy = rng.uniform(0, mw), rng.uniform(0, mh)
-        rx, ry = rng.uniform(18, 55), rng.uniform(10, 30)
-        col = rng.choice(shades)
-        pd.ellipse([cx - rx, cy - ry, cx + rx, cy + ry],
-                   fill=col + (rng.randint(45, 70),))
-    patch = patch.filter(ImageFilter.GaussianBlur(14))
-    terrain = Image.alpha_composite(terrain.convert("RGBA"), patch).convert("RGB")
-    d._image.paste(terrain, (x0, y0), mask)
-    # --- graticule (under land labels, over ocean)
+        d.polygon(pts, fill=LAND)
+    for pts in land_polys:
+        d.line(pts + [pts[0]], fill=LANDB, width=1)
+    # --- graticule (light, under labels)
     grat_f = font(SANS, 8)
     for lat in (-60, -30, 0, 30, 60):
         _, py = project(x0, y0, x1, y1, 0, lat)
-        d.line([x0, py, x1, py], fill=(186, 205, 202), width=1)
+        d.line([x0, py, x1, py], fill=(190, 208, 205), width=1)
         lab = "%d%s" % (abs(lat), "N" if lat > 0 else ("S" if lat < 0 else ""))
         d.text((x0 + 3, py - 11), lab, font=grat_f, fill=(120, 140, 138))
     for lon in (-120, -60, 0, 60, 120):
         px, _ = project(x0, y0, x1, y1, lon, 0)
-        d.line([px, y0, px, y1], fill=(186, 205, 202), width=1)
+        d.line([px, y0, px, y1], fill=(190, 208, 205), width=1)
         lab = "%d%s" % (abs(lon), "W" if lon < 0 else ("E" if lon > 0 else ""))
         d.text((px + 3, y1 - 11), lab, font=grat_f, fill=(120, 140, 138))
-    # --- ocean names
+    # --- ocean names (letterspaced, clear of land)
     ocean_f = font(SERIF, 11)
-    for txt, lo, la in (("PACIFIC OCEAN", -136, -8), ("ATLANTIC", -28, -35),
-                        ("INDIAN OCEAN", 75, -32), ("PACIFIC", 155, -45)):
+    for txt, lo, la in (("PACIFIC OCEAN", -120, -8), ("ATLANTIC", -28, -35),
+                        ("INDIAN OCEAN", 75, -32), ("PACIFIC", 140, -48)):
         ox, oy = project(x0, y0, x1, y1, lo, la)
-        d.text((ox - ocean_f.getlength(txt) / 2, oy), txt, font=ocean_f,
-               fill=(110, 138, 136))
-    # --- country borders first, then crisp coastline on top
-    for poly in BORDERS:
-        pts = [project(x0, y0, x1, y1, lo, la) for lo, la in poly]
-        d.line(pts, fill=BORDERLINE, width=1)
-    for pts in land_polys:
-        d.polygon(pts, outline=LANDB)
-        d.line(pts + [pts[0]], fill=LANDB, width=2)
-    # --- continent / region labels (EUROPE omitted: pins 6/7/9 cover it)
+        spaced(d, ox, oy, txt, ocean_f, (110, 138, 136), tracking=3)
+    # --- continent labels (letterspaced small caps, clear of pins)
     cont_f = font(SANSB, 9)
-    for txt, lo, la in (("NORTH AMERICA", -102, 58), ("SOUTH AMERICA", -58, -14),
-                        ("AFRICA", 20, 4), ("ASIA", 95, 52),
+    for txt, lo, la in (("NORTH AMERICA", -108, 62), ("SOUTH AMERICA", -58, -14),
+                        ("AFRICA", 20, 3), ("ASIA", 78, 60),
                         ("AUSTRALIA", 134, -25)):
         ox, oy = project(x0, y0, x1, y1, lo, la)
-        d.text((ox - cont_f.getlength(txt) / 2, oy), txt, font=cont_f,
-               fill=CONTLBL)
+        spaced(d, ox, oy, txt, cont_f, CONTLBL, tracking=2)
     # --- compass rose, bottom-left over empty South Pacific
     ccx, ccy = x0 + 58, y1 - 24
     d.ellipse([ccx - 9, ccy - 9, ccx + 9, ccy + 9], outline=(90, 90, 88),
@@ -537,7 +568,6 @@ def draw_map(d, x0, y0, x1, y1, pin_r=8):
     d.rectangle([x0 + 4, y0 + 4, x0 + 12 + lab_f.getlength(lab), y0 + 20],
                 fill=PAPER)
     d.text((x0 + 8, y0 + 5), lab, font=lab_f, fill=RED)
-
 
 
 # ------------------------------------------------------------------- photos
@@ -614,15 +644,15 @@ UTC_SLOTS = [
 ]
 
 
-def draw_numbers_strip(d, y, h=27):
+def draw_numbers_strip(d, y, h=34):
     d.line([26, y, W - 26, y], fill=RULE, width=1)
     cw = (W - 52) // 6
     big_f = font(SERIFB, 16)
     cap_f = font(SANS, 8)
     for i, (num, cap) in enumerate(NUMBERS):
         cx = 26 + i * cw + cw // 2
-        d.text((cx, y + 1), num, font=big_f, fill=RED, anchor="ma")
-        d.text((cx, y + 17), cap, font=cap_f, fill=INK, anchor="ma")
+        d.text((cx, y + 2), num, font=big_f, fill=RED, anchor="ma")
+        d.text((cx, y + 21), cap, font=cap_f, fill=INK, anchor="ma")
         if i:
             d.line([26 + i * cw, y + 4, 26 + i * cw, y + h - 4],
                    fill=(210, 200, 175), width=1)
@@ -630,7 +660,7 @@ def draw_numbers_strip(d, y, h=27):
     return y + h
 
 
-def draw_utc_strip(d, y, h=20):
+def draw_utc_strip(d, y, h=26):
     d.rectangle([26, y, 26 + 108, y + h], fill=RED)
     lab_f = font(SANSB, 9)
     d.text((26 + 54, y + h // 2), "THE DAY IN UTC", font=lab_f,
@@ -642,8 +672,8 @@ def draw_utc_strip(d, y, h=20):
     for i, (ph, ev) in enumerate(UTC_SLOTS):
         x = x0 + i * cw
         assert ev_f.getlength(ev) <= cw - 6, f"UTC slot overflows: {ev!r}"
-        d.text((x, y + 1), ph, font=ph_f, fill=RED)
-        d.text((x, y + 10), ev, font=ev_f, fill=INK)
+        d.text((x, y + 3), ph, font=ph_f, fill=RED)
+        d.text((x, y + 14), ev, font=ev_f, fill=INK)
     d.line([26, y + h, W - 26, y + h], fill=RULE, width=1)
     return y + h
 
@@ -662,7 +692,7 @@ def draw_header_v3(d, y):
     return y + 5
 
 
-def hero_card_photo(d, x, y, w, h, s, photo_h=115):
+def hero_card_photo(d, x, y, w, h, s, photo_h=112):
     """v5: panel foto 115px (v4: 100px), headline 14pt, deck 11pt, tinta
     pekat (INK 16 / DECK 30)."""
     num_f = font(SERIFB, 17)
@@ -695,7 +725,7 @@ def hero_card_photo(d, x, y, w, h, s, photo_h=115):
     return yy
 
 
-def small_card_photo(d, x, y, w, h, s, photo_h=84):
+def small_card_photo(d, x, y, w, h, s, photo_h=80):
     """v5: banner foto 84px (v4: 56px), headline 13pt, deck 10pt, tinta
     pekat (INK 16 / DECK 30)."""
     num_f = font(SERIFB, 15)
@@ -817,28 +847,29 @@ def draw_judge_footer(d, y):
 
 # ---------------------------------------------------------------- layout A
 def render_a(path):
-    """v1 (20 Nov): masthead 37pt + strip angka 26px + strip UTC 19px +
-    3 hero foto 115px (198px) + 8 kartu kecil foto 84px (174px, 2 baris x 4)
-    + peta realistis 448x240 bawah-kiri + ALSO 22 (9pt) + Judge Note dua
-    baris (baris kedua: DATE CHECK — berita 19 Nov yang sengaja tidak
+    """v2 (20 Nov, revisi verdict fadli): masthead 37pt + strip angka 34px +
+    strip UTC 26px (keduanya dilonggarkan supaya teks tidak mepet garis) +
+    3 hero foto 112px (190px) + 8 kartu kecil foto 80px (170px, 2 baris x 4)
+    + peta Natural Earth 110m 448x238 bawah-kiri + ALSO 22 (9pt) + Judge Note
+    dua baris (baris kedua: DATE CHECK — berita 19 Nov yang sengaja tidak
     dimasukkan)."""
     img = Image.new("RGB", (W, H), PAPER)
     d = ImageDraw.Draw(img)
     y = draw_header_v3(d, 6)
-    y = draw_numbers_strip(d, y + 2, h=26)
-    y = draw_utc_strip(d, y + 2, h=19)
+    y = draw_numbers_strip(d, y + 2, h=34)
+    y = draw_utc_strip(d, y + 2, h=26)
     y += 6
     # hero 1-3
     gap = 12
     cw = (W - 52 - gap * 2) // 3
-    hero_h = 198
+    hero_h = 190
     for c in range(3):
         x = 26 + c * (cw + gap)
         hero_card_photo(d, x, y, cw, hero_h, MAIN[c])
     y += hero_h + 4
     # kartu kecil 4-11: 2 baris x 4 kolom
     scw = (W - 52 - gap * 3) // 4
-    sch = 174
+    sch = 170
     for r in range(2):
         for c in range(4):
             idx = 3 + r * 4 + c
@@ -852,7 +883,7 @@ def render_a(path):
     d.text((490, y), "ALSO ON FRIDAY 20 NOVEMBER \u2014 22 MORE STORIES",
            font=font(SANSB, 12), fill=INK)
     y += 18
-    map_h = 240
+    map_h = 238
     draw_map(d, 26, y, 26 + 448, y + map_h)
     y2 = draw_also(d, y, cols=2, item_size=9, x0=490)
     print("ALSO bottom:", y2, "map bottom:", y + map_h)
